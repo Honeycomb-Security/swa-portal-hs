@@ -2,37 +2,43 @@ name: Dependency Scan (OSV)
 
 on:
   push:
-    branches: [ develop, master, main ]
+    branches: [develop, master, main]
   pull_request:
-    branches: [ develop, master, main ]
+    branches: [develop, master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   osv-scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Check if dependencies exist
         id: deps
         run: |
-          if ls **/package.json >/dev/null 2>&1; then
-            echo "found=true" >> $GITHUB_OUTPUT
+          if find . -name package.json -type f -print -quit | grep -q .; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
           else
-            echo "found=false" >> $GITHUB_OUTPUT
+            echo "found=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Install osv-scanner
+      - name: Run OSV Scanner
         if: steps.deps.outputs.found == 'true'
         run: |
-          curl -L https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_${{ runner.os }}_amd64 \
-            -o osv-scanner
-          chmod +x osv-scanner
-
-      - name: Run scan
-        if: steps.deps.outputs.found == 'true'
-        run: ./osv-scanner --recursive .
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/src:ro" \
+            -w /src \
+            ghcr.io/google/osv-scanner@sha256:a70ffffc2bfd33482953e5d6b64c6fcdb30239717a07b0f0d3ab2859ce3e4cde \
+            scan source --recursive .
 
       - name: Skip scan (no dependencies)
         if: steps.deps.outputs.found == 'false'
-        run: echo "No dependencies found — skipping OSV scan."
+        run: echo "No package.json found - skipping OSV scan."
